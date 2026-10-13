@@ -5,10 +5,12 @@ Want to add your own jam spot or excuse? Just add it to the lists below.
 speed  = typical crawl speed at that spot (km/h)
 stuck  = extra minutes you lose just sitting at that spot
 fame   = how famous the jam is (0-100). Famous jams = more believable excuses.
+coords = (latitude, longitude) of the jam spot, used to fetch live traffic.
 """
 
 HOTSPOTS = {
     "Silk Board Junction": {
+        "coords": (12.9172, 77.6229),
         "emoji": "🐢",
         "speed": 5,
         "stuck": 25,
@@ -20,6 +22,7 @@ HOTSPOTS = {
         ],
     },
     "Outer Ring Road (Marathahalli)": {
+        "coords": (12.9569, 77.7011),
         "emoji": "🅿️",
         "speed": 8,
         "stuck": 20,
@@ -31,6 +34,7 @@ HOTSPOTS = {
         ],
     },
     "Hebbal Flyover": {
+        "coords": (13.0358, 77.597),
         "emoji": "✈️",
         "speed": 9,
         "stuck": 18,
@@ -41,6 +45,7 @@ HOTSPOTS = {
         ],
     },
     "KR Puram (Tin Factory)": {
+        "coords": (12.9977, 77.6702),
         "emoji": "🏭",
         "speed": 7,
         "stuck": 20,
@@ -51,6 +56,7 @@ HOTSPOTS = {
         ],
     },
     "Bellandur / Sarjapur Road": {
+        "coords": (12.9206, 77.6647),
         "emoji": "🕳️",
         "speed": 7,
         "stuck": 20,
@@ -61,6 +67,7 @@ HOTSPOTS = {
         ],
     },
     "Whitefield / ITPL": {
+        "coords": (12.9863, 77.7311),
         "emoji": "💻",
         "speed": 9,
         "stuck": 18,
@@ -71,6 +78,7 @@ HOTSPOTS = {
         ],
     },
     "Electronic City Flyover": {
+        "coords": (12.8853, 77.6393),
         "emoji": "🛣️",
         "speed": 12,
         "stuck": 12,
@@ -81,6 +89,7 @@ HOTSPOTS = {
         ],
     },
     "Bannerghatta Road (Dairy Circle)": {
+        "coords": (12.937, 77.6008),
         "emoji": "🚇",
         "speed": 9,
         "stuck": 15,
@@ -91,6 +100,7 @@ HOTSPOTS = {
         ],
     },
     "Sony World Signal, Koramangala": {
+        "coords": (12.9372, 77.6268),
         "emoji": "📣",
         "speed": 10,
         "stuck": 12,
@@ -101,6 +111,7 @@ HOTSPOTS = {
         ],
     },
     "Majestic": {
+        "coords": (12.9767, 77.5713),
         "emoji": "🚌",
         "speed": 8,
         "stuck": 15,
@@ -111,6 +122,7 @@ HOTSPOTS = {
         ],
     },
     "Mekhri Circle": {
+        "coords": (13.0143, 77.5838),
         "emoji": "🌀",
         "speed": 11,
         "stuck": 12,

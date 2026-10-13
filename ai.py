@@ -78,6 +78,7 @@ def write_excuse(
     extras: list[str],
     timing: str,
     previous: list[str],
+    facts: str = "",
 ) -> str:
     """Ask Gemini for a fresh excuse. Raises an exception if anything goes wrong."""
     from google.genai import types
@@ -98,6 +99,7 @@ def write_excuse(
 - Extra bad luck: {bad_luck}
 - Timing to include: {timing}
 - Comedy angle for this one: write it {angle}
+- Real facts you can use (live data, these are true right now): {facts or "none"}
 
 Previous excuses (do not repeat these jokes):
 {previous_text}"""

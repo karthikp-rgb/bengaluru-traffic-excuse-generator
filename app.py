@@ -7,6 +7,7 @@ import streamlit as st
 
 from ai import get_api_key, write_excuse
 from excuses import AUDIENCES, EXTRAS, HOTSPOTS, TIME_SLOTS, TONES
+from live import bengaluru_weather, jam_level, live_traffic
 
 IST = ZoneInfo("Asia/Kolkata")
 RIGHT_NOW = "Right now (auto)"
@@ -66,23 +67,59 @@ def estimate(hotspot: str, distance_km: float, slot: str, extras: list[str]) -> 
     return maps_mins, max(real_mins, maps_mins + 1)
 
 
-def believability(hotspot: str, slot: str, extras: list[str]) -> tuple[int, str]:
-    """Score how believable the excuse is, with a warning if something smells fishy."""
-    score = HOTSPOTS[hotspot]["fame"]
-    warning = ""
+def estimate_live(distance_km: float, live: dict) -> tuple[int, int]:
+    """Return (time with no traffic, time with live traffic) in minutes, using real speed at the jam spot."""
+    jam_km = min(distance_km, 2)
+    rest_km = distance_km - jam_km
+    current = max(live["current_speed"], 2)
+    free_flow = max(live["free_flow_speed"], current)
 
-    if slot in ("Late night (12–5 AM)", "Night (9 PM–12 AM)") and not extras:
-        score -= 35
-        warning = f"Nobody believes {hotspot} traffic at this hour. Add some bad luck or leave earlier."
-    elif slot == "Early morning (5–8 AM)" and not extras:
-        score -= 20
-        warning = "Traffic this early? Bold claim. A bus breakdown or a cow might help."
+    normal_mins = jam_km / free_flow * 60 + rest_km / 25 * 60
+    # Jams spread, so the rest of the trip slows down too (but less than the jam spot itself)
+    city_speed = 25 * (0.4 + 0.6 * live["ratio"])
+    real_mins = jam_km / current * 60 + rest_km / city_speed * 60
+    if live["road_closed"]:
+        real_mins += 20
+
+    normal_mins = max(round(normal_mins), 1)
+    return normal_mins, max(round(real_mins), normal_mins + 1)
+
+
+def believability(
+    hotspot: str, slot: str, extras: list[str], live: dict | None, weather: dict | None
+) -> tuple[int, list[str]]:
+    """Score how believable the excuse is, with warnings if something smells fishy."""
+    warnings = []
+
+    if live:
+        # Real jam = believable excuse. Clear road = you're about to get caught.
+        score = round(100 * (1 - live["ratio"]) ** 0.6)
+        if live["ratio"] >= 0.75:
+            warnings.append(
+                f"Live data says {hotspot} is moving at {live['current_speed']} km/h right now "
+                f"(normal is {live['free_flow_speed']}). Anyone who checks Google Maps will catch you. 👀"
+            )
+    else:
+        score = HOTSPOTS[hotspot]["fame"]
+        if slot in ("Late night (12–5 AM)", "Night (9 PM–12 AM)") and not extras:
+            score -= 35
+            warnings.append(f"Nobody believes {hotspot} traffic at this hour. Add some bad luck or leave earlier.")
+        elif slot == "Early morning (5–8 AM)" and not extras:
+            score -= 20
+            warnings.append("Traffic this early? Bold claim. A bus breakdown or a cow might help.")
+
+    if weather and "🌧️ Rain" in extras:
+        if weather["raining"]:
+            score += 5
+        else:
+            score -= 20
+            warnings.append("Weather check: it's not raining in Bengaluru right now. Bold move. ☀️")
 
     if len(extras) >= 3:
         score -= 15 * (len(extras) - 2)
-        warning = "That's a lot of bad luck for one trip. Very suspicious. 🤨"
+        warnings.append("That's a lot of bad luck for one trip. Very suspicious. 🤨")
 
-    return max(5, min(99, score)), warning
+    return max(5, min(99, score)), warnings
 
 
 def verdict(score: int) -> str:
@@ -164,8 +201,17 @@ extras = st.pills("Add some extra bad luck", list(EXTRAS.keys()), selection_mode
 
 # Work out the time slot and ETA
 now = datetime.now(IST)
-slot = slot_for_hour(now.hour) if slot_choice == RIGHT_NOW else slot_choice
-maps_mins, real_mins = estimate(hotspot, distance, slot, extras)
+is_now = slot_choice == RIGHT_NOW
+slot = slot_for_hour(now.hour) if is_now else slot_choice
+
+# Live data only makes sense for "right now"
+live = live_traffic(HOTSPOTS[hotspot]["coords"]) if is_now else None
+weather = bengaluru_weather() if is_now else None
+
+if live:
+    maps_mins, real_mins = estimate_live(distance, live)
+else:
+    maps_mins, real_mins = estimate(hotspot, distance, slot, extras)
 eta_clock = clock(now + timedelta(minutes=real_mins)) if slot_choice == RIGHT_NOW else ""
 
 display_name = name.strip() or AUDIENCES[audience]["default_name"]
@@ -201,6 +247,16 @@ if clicked:
                 if eta_clock
                 else f"still about {nice_minutes(real_mins)} away"
             )
+            facts = []
+            if live:
+                facts.append(
+                    f"Live traffic: {hotspot} is moving at {live['current_speed']} km/h right now "
+                    f"(normally {live['free_flow_speed']} km/h)."
+                )
+                if live["road_closed"]:
+                    facts.append("The road there is actually closed right now.")
+            if weather and weather["raining"]:
+                facts.append("It really is raining in Bengaluru right now.")
             try:
                 with st.spinner("The AI is also stuck in traffic. One sec..."):
                     fresh = write_excuse(
@@ -211,6 +267,7 @@ if clicked:
                         extras=extras,
                         timing=timing,
                         previous=st.session_state.ai_history,
+                        facts=" ".join(facts),
                     )
                 st.session_state.ai_message = fresh
                 st.session_state.ai_settings = settings
@@ -241,25 +298,56 @@ st.link_button(
     use_container_width=True,
 )
 
-# Stats
+# ---------- live conditions ----------
 st.divider()
-m1, m2, m3 = st.columns(3)
-m1.metric("Google Maps says", nice_minutes(maps_mins))
-m2.metric("Bengaluru says", nice_minutes(real_mins))
-m3.metric("Reality check", f"{real_mins / maps_mins:.1f}x slower")
+if live:
+    st.markdown(f"#### 🔴 Live at {hotspot}")
+    l1, l2, l3 = st.columns(3)
+    l1.metric(
+        "Speed right now",
+        f"{live['current_speed']} km/h",
+        delta=f"{live['current_speed'] - live['free_flow_speed']} km/h vs normal",
+    )
+    l2.metric("Normal speed", f"{live['free_flow_speed']} km/h")
+    l3.metric("Jam level", jam_level(live["ratio"]))
+    if live["road_closed"]:
+        st.error("🚧 The road at this spot is reported closed right now.")
+    age = max(0, round((datetime.now(IST) - live["fetched_at"]).total_seconds() / 60))
+    st.caption(
+        f"Live traffic data © TomTom, updated {'just now' if age == 0 else f'{age} min ago'}. "
+        "Speed is measured at the jam spot; the rest of your trip is an estimate."
+    )
+elif is_now:
+    st.caption("📡 Live traffic is off (no TomTom key, or the service is busy). Using the joke formula instead.")
 
-if slot_choice == RIGHT_NOW:
+if weather:
+    sky = "raining 🌧️" if weather["raining"] else "not raining ☀️"
+    st.caption(f"Bengaluru right now: {weather['temp']}°C, {sky}. Weather data by Open-Meteo.com.")
+    if weather["raining"] and "🌧️ Rain" not in extras:
+        st.info("It's actually raining right now. Add 🌧️ Rain for a more believable excuse.")
+
+m1, m2, m3 = st.columns(3)
+if live:
+    m1.metric("Without traffic", nice_minutes(maps_mins))
+    m2.metric("With live traffic", nice_minutes(real_mins))
+    m3.metric("Traffic tax", f"+{nice_minutes(real_mins - maps_mins)}")
+else:
+    m1.metric("Google Maps says", nice_minutes(maps_mins))
+    m2.metric("Bengaluru says", nice_minutes(real_mins))
+    m3.metric("Reality check", f"{real_mins / maps_mins:.1f}x slower")
+
+if is_now:
     st.caption(f"Using the current time in Bengaluru: {clock(now)} ({slot.split(' (')[0].lower()}).")
 
-score, warning = believability(hotspot, slot, extras)
+score, warnings = believability(hotspot, slot, extras, live, weather)
 st.markdown(f"**Believability meter: {score}%**")
 st.progress(score / 100)
 st.write(verdict(score))
-if warning:
-    st.warning(warning)
+for w in warnings:
+    st.warning(w)
 
 st.divider()
 st.caption(
     "Made for fun. If you're the one driving, let someone else send this. 🙏  \n"
-    "Travel times are a joke formula, not real traffic data."
+    "Travel times use live speed at the jam spot when available, otherwise a joke formula."
 )
